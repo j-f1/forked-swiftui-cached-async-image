@@ -3,6 +3,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A view that asynchronously loads, cache and displays an image.
 ///
@@ -77,6 +78,8 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     
     private let content: (AsyncImagePhase) -> Content
     
+    private let dataBinding: Binding<(Data, UTType)?>?
+    
     public var body: some View {
         content(phase)
             .task(id: urlRequest, load)
@@ -104,9 +107,9 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///     different value when loading images designed for higher resolution
     ///     displays. For example, set a value of `2` for an image that you
     ///     would name with the `@2x` suffix if stored in a file on disk.
-    public init(url: URL?, urlCache: URLCache = .shared,  scale: CGFloat = 1) where Content == Image {
+    public init(url: URL?, urlCache: URLCache = .shared,  scale: CGFloat = 1, data: Binding<(Data, UTType)?>? = nil) where Content == Image {
         let urlRequest = url == nil ? nil : URLRequest(url: url!)
-        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale)
+        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale, data: data)
     }
     
     /// Loads and displays an image from the specified URL.
@@ -131,8 +134,8 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///     different value when loading images designed for higher resolution
     ///     displays. For example, set a value of `2` for an image that you
     ///     would name with the `@2x` suffix if stored in a file on disk.
-    public init(urlRequest: URLRequest?, urlCache: URLCache = .shared,  scale: CGFloat = 1) where Content == Image {
-        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale) { phase in
+    public init(urlRequest: URLRequest?, urlCache: URLCache = .shared,  scale: CGFloat = 1, data: Binding<(Data, UTType)?>? = nil) where Content == Image {
+        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale, data: data) { phase in
 #if os(macOS)
             phase.image ?? Image(nsImage: .init())
 #else
@@ -172,9 +175,9 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///     modify it as needed before returning it.
     ///   - placeholder: A closure that returns the view to show until the
     ///     load operation completes successfully.
-    public init<I, P>(url: URL?, urlCache: URLCache = .shared,  scale: CGFloat = 1, @ViewBuilder content: @escaping (Image) -> I, @ViewBuilder placeholder: @escaping () -> P) where Content == _ConditionalContent<I, P>, I : View, P : View {
+    public init<I, P>(url: URL?, urlCache: URLCache = .shared,  scale: CGFloat = 1, data: Binding<(Data, UTType)?>? = nil, @ViewBuilder content: @escaping (Image) -> I, @ViewBuilder placeholder: @escaping () -> P) where Content == _ConditionalContent<I, P>, I : View, P : View {
         let urlRequest = url == nil ? nil : URLRequest(url: url!)
-        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale, content: content, placeholder: placeholder)
+        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale, data: data, content: content, placeholder: placeholder)
     }
     
     /// Loads and displays a modifiable image from the specified URL using
@@ -208,8 +211,8 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///     modify it as needed before returning it.
     ///   - placeholder: A closure that returns the view to show until the
     ///     load operation completes successfully.
-    public init<I, P>(urlRequest: URLRequest?, urlCache: URLCache = .shared,  scale: CGFloat = 1, @ViewBuilder content: @escaping (Image) -> I, @ViewBuilder placeholder: @escaping () -> P) where Content == _ConditionalContent<I, P>, I : View, P : View {
-        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale) { phase in
+    public init<I, P>(urlRequest: URLRequest?, urlCache: URLCache = .shared,  scale: CGFloat = 1, data: Binding<(Data, UTType)?>? = nil, @ViewBuilder content: @escaping (Image) -> I, @ViewBuilder placeholder: @escaping () -> P) where Content == _ConditionalContent<I, P>, I : View, P : View {
+        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale, data: data) { phase in
             if let image = phase.image {
                 content(image)
             } else {
@@ -253,9 +256,9 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///   - transaction: The transaction to use when the phase changes.
     ///   - content: A closure that takes the load phase as an input, and
     ///     returns the view to display for the specified phase.
-    public init(url: URL?, urlCache: URLCache = .shared, scale: CGFloat = 1, transaction: Transaction = Transaction(), @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
+    public init(url: URL?, urlCache: URLCache = .shared, scale: CGFloat = 1, transaction: Transaction = Transaction(), data: Binding<(Data, UTType)?>? = nil, @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
         let urlRequest = url == nil ? nil : URLRequest(url: url!)
-        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale, transaction: transaction, content: content)
+        self.init(urlRequest: urlRequest, urlCache: urlCache, scale: scale, transaction: transaction, data: data, content: content)
     }
     
     /// Loads and displays a modifiable image from the specified URL in phases.
@@ -293,7 +296,7 @@ public struct CachedAsyncImage<Content>: View where Content: View {
     ///   - transaction: The transaction to use when the phase changes.
     ///   - content: A closure that takes the load phase as an input, and
     ///     returns the view to display for the specified phase.
-    public init(urlRequest: URLRequest?, urlCache: URLCache = .shared, scale: CGFloat = 1, transaction: Transaction = Transaction(), @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
+    public init(urlRequest: URLRequest?, urlCache: URLCache = .shared, scale: CGFloat = 1, transaction: Transaction = Transaction(), data: Binding<(Data, UTType)?>? = nil, @ViewBuilder content: @escaping (AsyncImagePhase) -> Content) {
         let configuration = URLSessionConfiguration.default
         configuration.urlCache = urlCache
         self.urlRequest = urlRequest
@@ -301,6 +304,7 @@ public struct CachedAsyncImage<Content>: View where Content: View {
         self.scale = scale
         self.transaction = transaction
         self.content = content
+        self.dataBinding = data
         
         self._phase = State(wrappedValue: .empty)
         do {
@@ -370,12 +374,18 @@ private extension CachedAsyncImage {
     private func image(from data: Data) throws -> Image {
 #if os(macOS)
         if let nsImage = NSImage(data: data) {
+            DispatchQueue.main.async {
+                dataBinding?.wrappedValue = (data, UTType(nsImage.cgImage!.utType! as String)!)
+            }
             return Image(nsImage: nsImage)
         } else {
             throw AsyncImage<Content>.LoadingError()
         }
 #else
         if let uiImage = UIImage(data: data, scale: scale) {
+            DispatchQueue.main.async {
+                dataBinding?.wrappedValue = (data, UTType(uiImage.cgImage!.utType! as String)!)
+            }
             return Image(uiImage: uiImage)
         } else {
             throw AsyncImage<Content>.LoadingError()
