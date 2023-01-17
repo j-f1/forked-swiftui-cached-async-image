@@ -375,7 +375,7 @@ private extension CachedAsyncImage {
 #if os(macOS)
         if let nsImage = NSImage(data: data) {
             DispatchQueue.main.async {
-                dataBinding?.wrappedValue = (data, UTType(nsImage.cgImage!.utType! as String)!)
+                dataBinding?.wrappedValue = (data, UTType(nsImage.writableTypes(for: .general).first!.rawValue)!)
             }
             return Image(nsImage: nsImage)
         } else {
